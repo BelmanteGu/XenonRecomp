@@ -688,6 +688,39 @@ inline simde__m128i simde_mm_vsr(simde__m128i a, simde__m128i b)
     return simde_mm_castps_si128(simde_mm_insert_ps(simde_mm_castsi128_ps(simde_mm_srl_epi64(a, b)), simde_mm_castsi128_ps(simde_mm_srl_epi64(simde_mm_srli_si128(a, 4), b)), 0x10));
 }
 
+// Half-float da GPU Xenos (sem inf/NaN; expoente 31 é número normal). Portado de
+// xenia/base/math.h (float_to_xenos_half / xenos_half_to_float), com os parâmetros
+// padrão que o Xenia usa em vpkd3d128/vupkd3d128: trunca e zera denormais.
+inline uint16_t ppc_float_to_xenos_half(float value)
+{
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    uint32_t absValue = bits & 0x7FFFFFFFu;
+    uint32_t result;
+    if (absValue >= 0x47FFE000u)
+        result = 0x7FFFu; // satura
+    else if (absValue < 0x38800000u)
+        result = 0u; // pequeno demais para half normalizado
+    else
+        result = ((absValue + 0xC8000000u) >> 13u) & 0x7FFFu; // rebaseia o expoente
+    return uint16_t(result | ((bits & 0x80000000u) >> 16u));
+}
+
+inline float ppc_xenos_half_to_float(uint16_t value)
+{
+    uint32_t mantissa = value & 0x3FFu;
+    uint32_t exponent = (value >> 10u) & 0x1Fu;
+    if (!exponent)
+    {
+        mantissa = 0;
+        exponent = uint32_t(-112);
+    }
+    uint32_t bits = (uint32_t(value & 0x8000u) << 16u) | ((exponent + 112u) << 23u) | (mantissa << 13u);
+    float result;
+    memcpy(&result, &bits, sizeof(result));
+    return result;
+}
+
 #if defined(__aarch64__) || defined(_M_ARM64)
 inline uint64_t __rdtsc()
 {
