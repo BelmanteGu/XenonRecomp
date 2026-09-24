@@ -2632,10 +2632,12 @@ bool Recompiler::Recompile(
 
 
     case PPC_INST_LHBRX:
-        println("\t{}.u16 = __builtin_bswap16(mem::loadVolatileU16<true>(base + {}.u32 + {}.u32));",
-            r(insn.operands[0]),
-            r(insn.operands[1] == 0 ? 0 : insn.operands[1]),
-            r(insn.operands[2]));
+        // RaymanPort: como o LWBRX do upstream. rA == 0 significa o valor 0 (não o registrador r0),
+        // e o resultado é estendido com zeros para o registrador inteiro.
+        print("\t{}.u64 = __builtin_bswap16(PPC_LOAD_U16(", r(insn.operands[0]));
+        if (insn.operands[1] != 0)
+            print("{}.u32 + ", r(insn.operands[1]));
+        println("{}.u32));", r(insn.operands[2]));
         break;
 
 
@@ -2657,43 +2659,44 @@ bool Recompiler::Recompile(
 
 
     case PPC_INST_VADDSBS:
-        println("\tsimd::store_i8({}.s8, simd::add_saturate_i8(simd::load_i8({}.s8), simd::load_i8({}.s8)));",
+        println("\tsimde_mm_store_si128((simde__m128i*){}.s8, simde_mm_adds_epi8(simde_mm_load_si128((simde__m128i*){}.s8), simde_mm_load_si128((simde__m128i*){}.s8)));",
             v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
         break;
 
 
-    case PPC_INST_VADDSWS: {
-        println("\tsimd::store_u32({}.u32, simd::add_saturate_i32(simd::to_vec128i({}), simd::to_vec128i({})));",
-            v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    case PPC_INST_VADDSWS:
+        // RaymanPort: soma de words com saturação com sinal, lane a lane (não há intrínseco SSE para isso).
+        for (size_t i = 0; i < 4; i++)
+            println("\t{{ int64_t t = (int64_t){}.s32[{}] + {}.s32[{}]; {}.s32[{}] = t > INT32_MAX ? INT32_MAX : t < INT32_MIN ? INT32_MIN : (int32_t)t; }}",
+                v(insn.operands[1]), i, v(insn.operands[2]), i, v(insn.operands[0]), i);
         break;
-    }
 
     case PPC_INST_VCMPEQUH:
-        println("\tsimd::store_u16({}.u16, simd::cmpeq_i16(simd::load_u16({}.u16), simd::load_u16({}.u16)));",
+        println("\tsimde_mm_store_si128((simde__m128i*){}.u16, simde_mm_cmpeq_epi16(simde_mm_load_si128((simde__m128i*){}.u16), simde_mm_load_si128((simde__m128i*){}.u16)));",
             v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
         if (strchr(insn.opcode->name, '.'))
-            println("\t{}.setFromMask(simd::load_u16({}.u16), 0xFFFF);", cr(6), v(insn.operands[0]));
+            println("\t{}.setFromMask(simde_mm_load_si128((simde__m128i*){}.u8), 0xFFFF);", cr(6), v(insn.operands[0]));
         break;
 
 
     case PPC_INST_VCMPGTSH:
-        println("\tsimd::store_i16({}.s16, simd::cmpgt_i16(simd::load_i16({}.s16), simd::load_i16({}.s16)));",
+        println("\tsimde_mm_store_si128((simde__m128i*){}.s16, simde_mm_cmpgt_epi16(simde_mm_load_si128((simde__m128i*){}.s16), simde_mm_load_si128((simde__m128i*){}.s16)));",
             v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
         if (strchr(insn.opcode->name, '.'))
-            println("\t{}.setFromMask(simd::load_i16({}.s16), 0xFFFF);", cr(6), v(insn.operands[0]));
+            println("\t{}.setFromMask(simde_mm_load_si128((simde__m128i*){}.u8), 0xFFFF);", cr(6), v(insn.operands[0]));
         break;
 
 
     case PPC_INST_VCMPGTSW:
-        println("\tsimd::store_i32({}.s32, simd::cmpgt_i32(simd::load_i32({}.s32), simd::load_i32({}.s32)));",
+        println("\tsimde_mm_store_si128((simde__m128i*){}.s32, simde_mm_cmpgt_epi32(simde_mm_load_si128((simde__m128i*){}.s32), simde_mm_load_si128((simde__m128i*){}.s32)));",
             v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
         if (strchr(insn.opcode->name, '.'))
-            println("\t{}.setFromMask(simd::load_i32({}.s32), 0xFFFF);", cr(6), v(insn.operands[0]));
+            println("\t{}.setFromMask(simde_mm_load_si128((simde__m128i*){}.u8), 0xFFFF);", cr(6), v(insn.operands[0]));
         break;
 
 
     case PPC_INST_VSUBUBM:
-        println("\tsimd::store_u8({}.u8, simd::sub_u8(simd::load_u8({}.u8), simd::load_u8({}.u8)));",
+        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_sub_epi8(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));",
             v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
         break;
 
