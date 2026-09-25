@@ -609,7 +609,10 @@ bool Recompiler::Recompile(
     case PPC_INST_BCTR:
         if (switchTable != config.switchTables.end())
         {
-            println("\tswitch ({}.u64) {{", r(switchTable->second.r));
+            // RaymanPort: u32, não u64. A guarda (cmplwi) só verifica os 32 bits de baixo e
+            // o default é __builtin_unreachable(): com u64 o Clang remove a checagem e indexa
+            // a tabela com os 64 bits, que podem ter lixo na metade de cima.
+            println("\tswitch ({}.u32) {{", r(switchTable->second.r));
 
             for (size_t i = 0; i < switchTable->second.labels.size(); i++)
             {
